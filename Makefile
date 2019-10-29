@@ -1,0 +1,2 @@
+build:
+	afl-gcc *.c
