@@ -8,11 +8,6 @@
 
 #define THROW(X) printf("error\n"); exit(1)
 #define INVALID_PARAMETER
-#define BEGIN_TRY
-#define TRY
-#define CATCH_OTHER(X) exit(1);
-#define END_TRY
-#define FINALLY
 
 static char decode_err[64];
 
@@ -56,7 +51,7 @@ decode_string(uint8_t **bufp, uint8_t *buf_end, char *strbuf, size_t strbuflen)
   }
 
   if (str_len >= strbuflen) {
-    snprintf(decode_err, sizeof(decode_err), "%d-byte string too big for %ld-byte buf", str_len, strbuflen);
+    snprintf(decode_err, sizeof(decode_err), "%d-byte string too big for %d-byte buf", str_len, strbuflen);
     THROW(INVALID_PARAMETER);
   }
 
@@ -81,7 +76,7 @@ decode_bin_fixed(uint8_t **bufp, uint8_t *buf_end, uint8_t *res, size_t reslen)
 
   uint8_t bin_len = next_byte(bufp, buf_end);
   if (bin_len != reslen) {
-    snprintf(decode_err, sizeof(decode_err), "expected %ld bin bytes, found %d", reslen, bin_len);
+    snprintf(decode_err, sizeof(decode_err), "expected %d bin bytes, found %d", reslen, bin_len);
     THROW(INVALID_PARAMETER);
   }
 
@@ -105,7 +100,7 @@ decode_bin_var(uint8_t **bufp, uint8_t *buf_end, uint8_t *res, size_t *reslen, s
 
   uint8_t bin_len = next_byte(bufp, buf_end);
   if (bin_len > reslenmax) {
-    snprintf(decode_err, sizeof(decode_err), "expected <= %ld bin bytes, found %d", reslenmax, bin_len);
+    snprintf(decode_err, sizeof(decode_err), "expected <= %d bin bytes, found %d", reslenmax, bin_len);
     THROW(INVALID_PARAMETER);
   }
 
@@ -172,84 +167,74 @@ tx_decode(uint8_t *buf, int buflen, struct txn *t)
 
   memset(t, 0, sizeof(*t));
 
-  BEGIN_TRY {
-    TRY {
-      uint8_t map_count = decode_fixsz(&buf, buf_end, FIXMAP_0, FIXMAP_15);
-      for (int i = 0; i < map_count; i++) {
-        char key[32];
-        decode_string(&buf, buf_end, key, sizeof(key));
+  uint8_t map_count = decode_fixsz(&buf, buf_end, FIXMAP_0, FIXMAP_15);
+  for (int i = 0; i < map_count; i++) {
+    char key[32];
+    decode_string(&buf, buf_end, key, sizeof(key));
 
-        if (!strcmp(key, "type")) {
-          char tbuf[16];
-          decode_string(&buf, buf_end, tbuf, sizeof(tbuf));
+    if (!strcmp(key, "type")) {
+      char tbuf[16];
+      decode_string(&buf, buf_end, tbuf, sizeof(tbuf));
 
-          if (!strcmp(tbuf, "pay")) {
-            t->type = PAYMENT;
-          } else if (!strcmp(tbuf, "keyreg")) {
-            t->type = KEYREG;
-          } else {
-            snprintf(decode_err, sizeof(decode_err), "unknown tx type %s", tbuf);
-            THROW(INVALID_PARAMETER);
-          }
-        } else if (!strcmp(key, "snd")) {
-          decode_bin_fixed(&buf, buf_end, t->sender, sizeof(t->sender));
-        } else if (!strcmp(key, "fee")) {
-          decode_uint64(&buf, buf_end, &t->fee);
-        } else if (!strcmp(key, "fv")) {
-          decode_uint64(&buf, buf_end, &t->firstValid);
-        } else if (!strcmp(key, "lv")) {
-          decode_uint64(&buf, buf_end, &t->lastValid);
-        } else if (!strcmp(key, "gen")) {
-          decode_string(&buf, buf_end, t->genesisID, sizeof(t->genesisID));
-        } else if (!strcmp(key, "gh")) {
-          decode_bin_fixed(&buf, buf_end, t->genesisHash, sizeof(t->genesisHash));
-        } else if (!strcmp(key, "note")) {
-          decode_bin_var(&buf, buf_end, t->note, &t->note_len, sizeof(t->note));
-        } else if (!strcmp(key, "amt")) {
-          decode_uint64(&buf, buf_end, &t->amount);
-        } else if (!strcmp(key, "rcv")) {
-          decode_bin_fixed(&buf, buf_end, t->receiver, sizeof(t->receiver));
-        } else if (!strcmp(key, "close")) {
-          decode_bin_fixed(&buf, buf_end, t->close, sizeof(t->close));
-        } else if (!strcmp(key, "selkey")) {
-          decode_bin_fixed(&buf, buf_end, t->vrfpk, sizeof(t->vrfpk));
-        } else if (!strcmp(key, "votekey")) {
-          decode_bin_fixed(&buf, buf_end, t->votepk, sizeof(t->votepk));
-        } else if (!strcmp(key, "aamt")) {
-          decode_uint64(&buf, buf_end, &t->asset_xfer_amount);
-        } else if (!strcmp(key, "aclose")) {
-          decode_bin_fixed(&buf, buf_end, t->asset_xfer_close, sizeof(t->asset_xfer_close));
-        } else if (!strcmp(key, "arcv")) {
-          decode_bin_fixed(&buf, buf_end, t->asset_xfer_receiver, sizeof(t->asset_xfer_receiver));
-        } else if (!strcmp(key, "asnd")) {
-          decode_bin_fixed(&buf, buf_end, t->asset_xfer_sender, sizeof(t->asset_xfer_sender));
-        } else if (!strcmp(key, "xaid")) {
-          decode_uint64(&buf, buf_end, &t->asset_xfer_id);
-        } else if (!strcmp(key, "faid")) {
-          decode_uint64(&buf, buf_end, &t->asset_freeze_id);
-        } else if (!strcmp(key, "fadd")) {
-          decode_bin_fixed(&buf, buf_end, t->asset_freeze_account, sizeof(t->asset_freeze_account));
-        } else if (!strcmp(key, "afrz")) {
-          decode_bool(&buf, buf_end, &t->asset_freeze_flag);
-        } else {
-          snprintf(decode_err, sizeof(decode_err), "unknown field %s", key);
-          THROW(INVALID_PARAMETER);
-        }
+      if (!strcmp(tbuf, "pay")) {
+	t->type = PAYMENT;
+      } else if (!strcmp(tbuf, "keyreg")) {
+	t->type = KEYREG;
+      } else {
+	snprintf(decode_err, sizeof(decode_err), "unknown tx type %s", tbuf);
+	THROW(INVALID_PARAMETER);
       }
-    }
-    CATCH_OTHER(e) {
-      ret = &decode_err[0];
-    }
-    FINALLY {
+    } else if (!strcmp(key, "snd")) {
+      decode_bin_fixed(&buf, buf_end, t->sender, sizeof(t->sender));
+    } else if (!strcmp(key, "fee")) {
+      decode_uint64(&buf, buf_end, &t->fee);
+    } else if (!strcmp(key, "fv")) {
+      decode_uint64(&buf, buf_end, &t->firstValid);
+    } else if (!strcmp(key, "lv")) {
+      decode_uint64(&buf, buf_end, &t->lastValid);
+    } else if (!strcmp(key, "gen")) {
+      decode_string(&buf, buf_end, t->genesisID, sizeof(t->genesisID));
+    } else if (!strcmp(key, "gh")) {
+      decode_bin_fixed(&buf, buf_end, t->genesisHash, sizeof(t->genesisHash));
+    } else if (!strcmp(key, "note")) {
+      decode_bin_var(&buf, buf_end, t->note, &t->note_len, sizeof(t->note));
+    } else if (!strcmp(key, "amt")) {
+      decode_uint64(&buf, buf_end, &t->amount);
+    } else if (!strcmp(key, "rcv")) {
+      decode_bin_fixed(&buf, buf_end, t->receiver, sizeof(t->receiver));
+    } else if (!strcmp(key, "close")) {
+      decode_bin_fixed(&buf, buf_end, t->close, sizeof(t->close));
+    } else if (!strcmp(key, "selkey")) {
+      decode_bin_fixed(&buf, buf_end, t->vrfpk, sizeof(t->vrfpk));
+    } else if (!strcmp(key, "votekey")) {
+      decode_bin_fixed(&buf, buf_end, t->votepk, sizeof(t->votepk));
+    } else if (!strcmp(key, "aamt")) {
+      decode_uint64(&buf, buf_end, &t->asset_xfer_amount);
+    } else if (!strcmp(key, "aclose")) {
+      decode_bin_fixed(&buf, buf_end, t->asset_xfer_close, sizeof(t->asset_xfer_close));
+    } else if (!strcmp(key, "arcv")) {
+      decode_bin_fixed(&buf, buf_end, t->asset_xfer_receiver, sizeof(t->asset_xfer_receiver));
+    } else if (!strcmp(key, "asnd")) {
+      decode_bin_fixed(&buf, buf_end, t->asset_xfer_sender, sizeof(t->asset_xfer_sender));
+    } else if (!strcmp(key, "xaid")) {
+      decode_uint64(&buf, buf_end, &t->asset_xfer_id);
+    } else if (!strcmp(key, "faid")) {
+      decode_uint64(&buf, buf_end, &t->asset_freeze_id);
+    } else if (!strcmp(key, "fadd")) {
+      decode_bin_fixed(&buf, buf_end, t->asset_freeze_account, sizeof(t->asset_freeze_account));
+    } else if (!strcmp(key, "afrz")) {
+      decode_bool(&buf, buf_end, &t->asset_freeze_flag);
+    } else {
+      snprintf(decode_err, sizeof(decode_err), "unknown field %s", key);
+      THROW(INVALID_PARAMETER);
     }
   }
-  END_TRY;
 
   return ret;
 }
 
 int main(int argc, char *argv[]) {
-  uint8_t buf[1024];
+  uint8_t buf[1022];
   struct txn decoded;
   ssize_t r = read(0, buf, sizeof(buf));
   if (r > 0) {
